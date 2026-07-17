@@ -117,11 +117,20 @@ function requiredText(
   }
 
   const normalized = candidate.replace(/\s+/g, " ").trim();
-  if (normalized.length < 3 || normalized.length > maximumLength) {
+  if (normalized.length < 3) {
     throw new InvalidOpenAIResponseError(`${key} has an unsafe length.`);
   }
 
-  return normalized;
+  if (normalized.length <= maximumLength) return normalized;
+
+  const clipped = normalized.slice(0, maximumLength - 1).trimEnd();
+  const lastWordBoundary = clipped.lastIndexOf(" ");
+  const prefix =
+    lastWordBoundary >= Math.floor(maximumLength * 0.7)
+      ? clipped.slice(0, lastWordBoundary)
+      : clipped;
+
+  return `${prefix.replace(/[,:;\s]+$/g, "")}…`;
 }
 
 export function parseOpenAIStrategy(text: string): StrategyProposal {
@@ -210,6 +219,7 @@ function instructions() {
     "Diagnose why the completed experiment failed and propose exactly one small next hypothesis.",
     "You may reason about strategy only. You cannot send email, enrich contacts, or bypass hard boundaries.",
     "Ground the answer in the supplied campaign evidence, keep each field concise, and do not expose hidden reasoning.",
+    "Keep diagnosis and rationale under 280 characters, evidence under 180, audience under 90, and angle and proof under 120.",
   ].join("\n");
 }
 
