@@ -29,6 +29,39 @@ export interface StrategySnapshot {
   confidence: number;
 }
 
+export type StrategyFallbackCode =
+  | "not-requested"
+  | "forced-demo"
+  | "missing-api-key"
+  | "disabled"
+  | "timeout"
+  | "service-error"
+  | "invalid-response";
+
+export interface StrategyEngineStatus {
+  provider: "AWS Bedrock";
+  mode: "live" | "deterministic-fallback";
+  modelId: string;
+  region: string;
+  latencyMs: number;
+  stopReason?: string;
+  fallbackCode?: StrategyFallbackCode;
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
+export interface StrategyProposal {
+  diagnosis: string;
+  rationale: string;
+  evidence: string;
+  strategy: StrategySnapshot;
+}
+
+export interface StrategyEngineResult {
+  proposal: StrategyProposal;
+  status: StrategyEngineStatus;
+}
+
 export interface LoopEvent {
   id: string;
   phase: LoopPhase;
@@ -58,6 +91,7 @@ export interface LoopRun {
   runId: string;
   scenario: "pivot-to-fintech";
   product: { name: string; description: string; goal: string };
+  strategyEngine: StrategyEngineStatus;
   before: { metrics: MetricSnapshot; strategy: StrategySnapshot };
   events: LoopEvent[];
   experiments: ExperimentResult[];
@@ -84,7 +118,33 @@ const initialStrategy: StrategySnapshot = {
   confidence: 31,
 };
 
-export function createDemoRun(): LoopRun {
+const deterministicProposal: StrategyProposal = {
+  diagnosis:
+    "Cost is not urgent. Audit evidence, access reviews, and SOC 2 appear repeatedly in replies and referral language.",
+  rationale:
+    "Test security leaders with an outcome-led promise: produce audit evidence for every agent action.",
+  evidence: "3 security phrases across 5 substantive replies",
+  strategy: {
+    audience: "Security leaders",
+    angle: "Audit-ready AI agent access",
+    proof: "Evidence for every tool action",
+    confidence: 61,
+  },
+};
+
+const defaultStrategyEngine: StrategyEngineStatus = {
+  provider: "AWS Bedrock",
+  mode: "deterministic-fallback",
+  modelId: "us.amazon.nova-2-lite-v1:0",
+  region: "us-east-1",
+  latencyMs: 0,
+  fallbackCode: "not-requested",
+};
+
+export function createDemoRun(strategyResult?: StrategyEngineResult): LoopRun {
+  const proposal = strategyResult?.proposal ?? deterministicProposal;
+  const strategyEngine = strategyResult?.status ?? defaultStrategyEngine;
+
   return {
     runId: "tracelayer-loop-2026-07-14",
     scenario: "pivot-to-fintech",
@@ -93,6 +153,7 @@ export function createDemoRun(): LoopRun {
       description: "Audit logs and access controls for production AI agents.",
       goal: "Find a repeatable message that books qualified discovery calls.",
     },
+    strategyEngine,
     before: { metrics: baselineMetrics, strategy: initialStrategy },
     events: [
       {
@@ -114,9 +175,8 @@ export function createDemoRun(): LoopRun {
         provider: "AWS Bedrock",
         kind: "correction",
         title: "The objection contains the signal",
-        detail:
-          "Cost is not urgent. Audit evidence, access reviews, and SOC 2 appear repeatedly in replies and referral language.",
-        evidence: "3 security phrases across 5 substantive replies",
+        detail: proposal.diagnosis,
+        evidence: proposal.evidence,
       },
       {
         id: "evt-plan-pivot",
@@ -124,14 +184,8 @@ export function createDemoRun(): LoopRun {
         provider: "AWS Bedrock",
         kind: "correction",
         title: "Pivot buyer and message",
-        detail:
-          "Test security leaders with an outcome-led promise: produce audit evidence for every agent action.",
-        strategy: {
-          audience: "Security leaders",
-          angle: "Audit-ready AI agent access",
-          proof: "Evidence for every tool action",
-          confidence: 61,
-        },
+        detail: proposal.rationale,
+        strategy: proposal.strategy,
       },
       {
         id: "evt-act-enrich",

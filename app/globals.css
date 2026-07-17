@@ -123,6 +123,11 @@ a:focus-visible {
   box-shadow: 0 0 12px var(--lime);
 }
 
+.status-dot--fallback {
+  background: var(--violet);
+  box-shadow: 0 0 12px var(--violet);
+}
+
 .topbar-actions {
   display: flex;
   justify-content: flex-end;

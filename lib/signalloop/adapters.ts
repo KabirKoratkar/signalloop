@@ -21,7 +21,7 @@ export interface ProtectedAction {
 }
 
 export const sponsorRoles = [
-  { name: "AWS Bedrock", role: "reasoning", state: "demo adapter" },
+  { name: "AWS Bedrock", role: "reasoning", state: "live-ready" },
   { name: "Nexla", role: "signals", state: "demo adapter" },
   { name: "Zero", role: "action", state: "demo adapter" },
   { name: "Pomerium", role: "policy", state: "policy modeled" },

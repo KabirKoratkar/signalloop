@@ -115,6 +115,24 @@ export function SignalLoopDashboard() {
   const activeEvent = visibleEvents.at(-1);
   const blocked = activeEvent?.kind === "blocked";
   const phase = activeEvent?.phase.toUpperCase() ?? "READY";
+  const strategyEngine = run?.strategyEngine;
+  const strategyEngineLabel =
+    runState === "loading"
+      ? "AWS Bedrock · checking"
+      : strategyEngine?.mode === "live"
+        ? "AWS Bedrock · live"
+        : strategyEngine
+          ? "AWS Bedrock · demo fallback"
+          : "TraceLayer · 3-day replay";
+  const displayedSponsorRoles = sponsorRoles.map((sponsor) =>
+    sponsor.name === "AWS Bedrock" && strategyEngine
+      ? {
+          ...sponsor,
+          state:
+            strategyEngine.mode === "live" ? "live inference" : "demo fallback",
+        }
+      : sponsor,
+  );
 
   async function runLoop() {
     abortRef.current?.abort();
@@ -183,9 +201,19 @@ export function SignalLoopDashboard() {
           </span>
         </a>
 
-        <div className="topbar-center" aria-label="Demo status">
-          <span className="status-dot" />
-          TraceLayer · 3-day replay
+        <div
+          className="topbar-center"
+          aria-label="Strategy engine status"
+          title={strategyEngine?.modelId}
+        >
+          <span
+            className={`status-dot${
+              strategyEngine?.mode === "deterministic-fallback"
+                ? " status-dot--fallback"
+                : ""
+            }`}
+          />
+          {strategyEngineLabel}
         </div>
 
         <div className="topbar-actions">
@@ -366,7 +394,7 @@ export function SignalLoopDashboard() {
       <footer className="sponsor-rail">
         <div><span className="eyebrow">Sponsor-ready capability chain</span><p>Every sponsor owns a visible, swappable step in the loop.</p></div>
         <ol>
-          {sponsorRoles.map((sponsor, index) => (
+          {displayedSponsorRoles.map((sponsor, index) => (
             <li key={sponsor.name}>
               <span>{String(index + 1).padStart(2, "0")}</span><strong>{sponsor.name}</strong><small>{sponsor.role}</small><i>{sponsor.state}</i>
             </li>

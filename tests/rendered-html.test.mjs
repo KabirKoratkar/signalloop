@@ -48,7 +48,10 @@ test("demo API returns the deterministic learning loop", async () => {
   const response = await request("/api/demo-loop", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ scenario: "pivot-to-fintech" }),
+    body: JSON.stringify({
+      scenario: "pivot-to-fintech",
+      strategyMode: "demo",
+    }),
   });
 
   assert.equal(response.status, 200);
@@ -57,13 +60,132 @@ test("demo API returns the deterministic learning loop", async () => {
   assert.equal(run.events.length, 10);
   assert.equal(run.guardrails.maxDailySends, 50);
   assert.equal(run.guardrails.demoMode, true);
+  assert.equal(run.strategyEngine.provider, "AWS Bedrock");
+  assert.equal(run.strategyEngine.mode, "deterministic-fallback");
+  assert.equal(run.strategyEngine.fallbackCode, "forced-demo");
+});
+
+test("a valid Bedrock response becomes the visible live strategy", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalToken = process.env.AWS_BEARER_TOKEN_BEDROCK;
+  const originalEnabled = process.env.BEDROCK_LIVE_ENABLED;
+  let bedrockCalls = 0;
+
+  process.env.AWS_BEARER_TOKEN_BEDROCK = "bedrock-test-token";
+  process.env.BEDROCK_LIVE_ENABLED = "true";
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === "string" ? input : input.url;
+    if (!url.startsWith("https://bedrock-runtime.")) {
+      return originalFetch(input, init);
+    }
+
+    bedrockCalls += 1;
+    assert.equal(
+      new Headers(init?.headers).get("authorization"),
+      "Bearer bedrock-test-token",
+    );
+    return Response.json({
+      output: {
+        message: {
+          content: [
+            {
+              text: JSON.stringify({
+                diagnosis:
+                  "The replies show audit evidence is more urgent than infrastructure cost.",
+                rationale:
+                  "Test security leaders with an audit-readiness outcome tied to their next access review.",
+                evidence:
+                  "Audit, access review, and SOC 2 appeared in substantive replies.",
+                audience: "Security leaders preparing for access reviews",
+                angle: "Audit-ready AI agent access",
+                proof: "Evidence for every tool action",
+                confidence: 68,
+              }),
+            },
+          ],
+        },
+      },
+      stopReason: "end_turn",
+      usage: { inputTokens: 210, outputTokens: 96 },
+      metrics: { latencyMs: 42 },
+    });
+  };
+
+  try {
+    const response = await request("/api/demo-loop", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ scenario: "pivot-to-fintech" }),
+    });
+    const run = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(bedrockCalls, 1);
+    assert.equal(run.strategyEngine.mode, "live");
+    assert.equal(run.strategyEngine.inputTokens, 210);
+    assert.equal(
+      run.events[1].detail,
+      "The replies show audit evidence is more urgent than infrastructure cost.",
+    );
+    assert.equal(run.events[2].strategy.confidence, 68);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalToken === undefined) delete process.env.AWS_BEARER_TOKEN_BEDROCK;
+    else process.env.AWS_BEARER_TOKEN_BEDROCK = originalToken;
+    if (originalEnabled === undefined) delete process.env.BEDROCK_LIVE_ENABLED;
+    else process.env.BEDROCK_LIVE_ENABLED = originalEnabled;
+  }
+});
+
+test("invalid Bedrock output falls back without breaking the loop", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalToken = process.env.AWS_BEARER_TOKEN_BEDROCK;
+  const originalEnabled = process.env.BEDROCK_LIVE_ENABLED;
+
+  process.env.AWS_BEARER_TOKEN_BEDROCK = "bedrock-test-token";
+  process.env.BEDROCK_LIVE_ENABLED = "true";
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === "string" ? input : input.url;
+    if (url.startsWith("https://bedrock-runtime.")) {
+      return Response.json({
+        output: {
+          message: { content: [{ text: '{"audience":"everyone"}' }] },
+        },
+        stopReason: "end_turn",
+      });
+    }
+    return originalFetch(input, init);
+  };
+
+  try {
+    const response = await request("/api/demo-loop", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ scenario: "pivot-to-fintech" }),
+    });
+    const run = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(run.events.length, 10);
+    assert.equal(run.strategyEngine.mode, "deterministic-fallback");
+    assert.equal(run.strategyEngine.fallbackCode, "invalid-response");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalToken === undefined) delete process.env.AWS_BEARER_TOKEN_BEDROCK;
+    else process.env.AWS_BEARER_TOKEN_BEDROCK = originalToken;
+    if (originalEnabled === undefined) delete process.env.BEDROCK_LIVE_ENABLED;
+    else process.env.BEDROCK_LIVE_ENABLED = originalEnabled;
+  }
 });
 
 test("policy denial is observed before a safe replan", async () => {
   const response = await request("/api/demo-loop", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ scenario: "pivot-to-fintech" }),
+    body: JSON.stringify({
+      scenario: "pivot-to-fintech",
+      strategyMode: "demo",
+    }),
   });
   const run = await response.json();
 
@@ -86,7 +208,10 @@ test("the loop improves outcomes without weakening guardrails", async () => {
   const response = await request("/api/demo-loop", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ scenario: "pivot-to-fintech" }),
+    body: JSON.stringify({
+      scenario: "pivot-to-fintech",
+      strategyMode: "demo",
+    }),
   });
   const run = await response.json();
   const finalEvent = run.events.at(-1);
