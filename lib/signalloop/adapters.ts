@@ -6,13 +6,13 @@ export interface SignalSource {
 }
 
 export interface Strategist {
-  name: "AWS Bedrock";
+  name: "OpenAI" | "AWS Bedrock";
   propose(events: LoopEvent[]): Promise<StrategySnapshot>;
 }
 
 export interface CapabilityGateway {
   name: "Zero";
-  discoverAndRun(capability: string, input: unknown): Promise<unknown>;
+  discover(capability: string): Promise<unknown>;
 }
 
 export interface ProtectedAction {
@@ -21,8 +21,8 @@ export interface ProtectedAction {
 }
 
 export const sponsorRoles = [
-  { name: "AWS Bedrock", role: "reasoning", state: "live-ready" },
-  { name: "Nexla", role: "signals", state: "demo adapter" },
-  { name: "Zero", role: "action", state: "demo adapter" },
-  { name: "Pomerium", role: "policy", state: "policy modeled" },
+  { name: "OpenAI", role: "reasoning", state: "billing blocked" },
+  { name: "Nexla", role: "signals", state: "data prepared" },
+  { name: "Zero", role: "capability discovery", state: "live discovery" },
+  { name: "Pomerium", role: "policy", state: "tunnel only" },
 ] as const;

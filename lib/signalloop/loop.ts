@@ -9,6 +9,7 @@ export type LoopPhase =
 export type EventKind = "info" | "blocked" | "correction" | "success";
 export type Provider =
   | "Nexla"
+  | "OpenAI"
   | "AWS Bedrock"
   | "Zero"
   | "Pomerium"
@@ -39,10 +40,10 @@ export type StrategyFallbackCode =
   | "invalid-response";
 
 export interface StrategyEngineStatus {
-  provider: "AWS Bedrock";
+  provider: "OpenAI" | "AWS Bedrock";
   mode: "live" | "deterministic-fallback";
   modelId: string;
-  region: string;
+  region?: string;
   latencyMs: number;
   stopReason?: string;
   fallbackCode?: StrategyFallbackCode;
@@ -60,6 +61,37 @@ export interface StrategyProposal {
 export interface StrategyEngineResult {
   proposal: StrategyProposal;
   status: StrategyEngineStatus;
+}
+
+export type ZeroFallbackCode =
+  | "not-requested"
+  | "forced-demo"
+  | "disabled"
+  | "no-capability"
+  | "invalid-capability"
+  | "service-error";
+
+export interface ZeroGatewayStatus {
+  provider: "Zero";
+  mode: "live-discovery" | "deterministic-fallback";
+  latencyMs: number;
+  capabilityName?: string;
+  capabilityId?: string;
+  pricing?: string;
+  protocol?: string;
+  fallbackCode?: ZeroFallbackCode;
+}
+
+export interface ZeroActionSnapshot {
+  title: string;
+  detail: string;
+  evidence: string;
+  kind: EventKind;
+}
+
+export interface ZeroGatewayResult {
+  status: ZeroGatewayStatus;
+  action: ZeroActionSnapshot;
 }
 
 export interface LoopEvent {
@@ -92,6 +124,7 @@ export interface LoopRun {
   scenario: "pivot-to-fintech";
   product: { name: string; description: string; goal: string };
   strategyEngine: StrategyEngineStatus;
+  capabilityGateway: ZeroGatewayStatus;
   before: { metrics: MetricSnapshot; strategy: StrategySnapshot };
   events: LoopEvent[];
   experiments: ExperimentResult[];
@@ -133,20 +166,42 @@ const deterministicProposal: StrategyProposal = {
 };
 
 const defaultStrategyEngine: StrategyEngineStatus = {
-  provider: "AWS Bedrock",
+  provider: "OpenAI",
   mode: "deterministic-fallback",
-  modelId: "us.amazon.nova-2-lite-v1:0",
-  region: "us-east-1",
+  modelId: "gpt-5.6-luna",
   latencyMs: 0,
   fallbackCode: "not-requested",
 };
 
-export function createDemoRun(strategyResult?: StrategyEngineResult): LoopRun {
+const defaultZeroResult: ZeroGatewayResult = {
+  status: {
+    provider: "Zero",
+    mode: "deterministic-fallback",
+    latencyMs: 0,
+    fallbackCode: "not-requested",
+  },
+  action: {
+    title: "Replay a verified test cohort",
+    detail:
+      "Used a deterministic cohort of 24 fictional security leaders. No live enrichment or verification occurred.",
+    evidence: "24 fictional contacts · demo replay · $0 spent",
+    kind: "info",
+  },
+};
+
+export function createDemoRun(
+  strategyResult?: StrategyEngineResult,
+  zeroResult: ZeroGatewayResult = defaultZeroResult,
+): LoopRun {
   const proposal = strategyResult?.proposal ?? deterministicProposal;
   const strategyEngine = strategyResult?.status ?? defaultStrategyEngine;
+  const strategyProvider: Provider =
+    strategyEngine.mode === "live" ? strategyEngine.provider : "SignalLoop";
+  const zeroProvider: Provider =
+    zeroResult.status.mode === "live-discovery" ? "Zero" : "SignalLoop";
 
   return {
-    runId: "tracelayer-loop-2026-07-14",
+    runId: "tracelayer-loop-2026-07-17",
     scenario: "pivot-to-fintech",
     product: {
       name: "TraceLayer",
@@ -154,16 +209,17 @@ export function createDemoRun(strategyResult?: StrategyEngineResult): LoopRun {
       goal: "Find a repeatable message that books qualified discovery calls.",
     },
     strategyEngine,
+    capabilityGateway: zeroResult.status,
     before: { metrics: baselineMetrics, strategy: initialStrategy },
     events: [
       {
         id: "evt-observe-day-one",
         phase: "observe",
-        provider: "Nexla",
+        provider: "SignalLoop",
         kind: "info",
-        title: "Day 1 missed the mark",
+        title: "Replay: Day 1 misses the mark",
         detail:
-          "22 verified engineering leaders received the cost-control message. No positive replies and no meetings.",
+          "The fictional replay models 22 verified engineering leaders receiving the cost-control message, with no positive replies or meetings.",
         evidence:
           "“Spend isn’t my issue. Security needs an audit trail before our SOC 2 review.”",
         metrics: baselineMetrics,
@@ -172,7 +228,7 @@ export function createDemoRun(strategyResult?: StrategyEngineResult): LoopRun {
       {
         id: "evt-reason-pain",
         phase: "reason",
-        provider: "AWS Bedrock",
+        provider: strategyProvider,
         kind: "correction",
         title: "The objection contains the signal",
         detail: proposal.diagnosis,
@@ -181,7 +237,7 @@ export function createDemoRun(strategyResult?: StrategyEngineResult): LoopRun {
       {
         id: "evt-plan-pivot",
         phase: "plan",
-        provider: "AWS Bedrock",
+        provider: strategyProvider,
         kind: "correction",
         title: "Pivot buyer and message",
         detail: proposal.rationale,
@@ -190,12 +246,11 @@ export function createDemoRun(strategyResult?: StrategyEngineResult): LoopRun {
       {
         id: "evt-act-enrich",
         phase: "act",
-        provider: "Zero",
-        kind: "info",
-        title: "Build a verified test cohort",
-        detail:
-          "Discovered enrichment and verification capabilities, then selected 24 security leaders across fintech, SaaS, and healthcare.",
-        evidence: "24 verified · 0 suppressed · 3 industries",
+        provider: zeroProvider,
+        kind: zeroResult.action.kind,
+        title: zeroResult.action.title,
+        detail: zeroResult.action.detail,
+        evidence: zeroResult.action.evidence,
         metrics: {
           latestPositiveRate: 25,
           meetings: 3,
@@ -207,11 +262,11 @@ export function createDemoRun(strategyResult?: StrategyEngineResult): LoopRun {
       {
         id: "evt-verify-segment",
         phase: "verify",
-        provider: "Nexla",
+        provider: "SignalLoop",
         kind: "success",
-        title: "Fintech security breaks away",
+        title: "Replay: fintech security breaks away",
         detail:
-          "The new message earns 6 positive replies and 3 meetings. Five of the six positives come from fintech security teams.",
+          "The modeled result gives the new message 6 positive replies and 3 meetings. Five of the six positives come from fintech security teams.",
         evidence: "Fintech 42% · SaaS 17% · Healthcare 0%",
         strategy: {
           audience: "Fintech security leaders",
@@ -223,11 +278,11 @@ export function createDemoRun(strategyResult?: StrategyEngineResult): LoopRun {
       {
         id: "evt-guard-scale",
         phase: "guard",
-        provider: "Pomerium",
+        provider: "SignalLoop",
         kind: "blocked",
-        title: "Unsafe scale-up denied",
+        title: "Modeled Pomerium policy denies unsafe scale-up",
         detail:
-          "SignalLoop requested a 240-contact send. Policy blocked it for exceeding both the 50/day limit and the 2× growth rule.",
+          "In the replay, a Pomerium-style policy blocks a 240-contact send for exceeding both the 50/day limit and the 2× growth rule.",
         evidence: "0 messages sent · blast radius contained",
         metrics: {
           latestPositiveRate: 25,
@@ -240,7 +295,7 @@ export function createDemoRun(strategyResult?: StrategyEngineResult): LoopRun {
       {
         id: "evt-reason-replan",
         phase: "reason",
-        provider: "AWS Bedrock",
+        provider: strategyProvider,
         kind: "correction",
         title: "Replan inside the boundary",
         detail:
@@ -256,11 +311,11 @@ export function createDemoRun(strategyResult?: StrategyEngineResult): LoopRun {
       {
         id: "evt-act-split-test",
         phase: "act",
-        provider: "Zero",
+        provider: "SignalLoop",
         kind: "info",
-        title: "Launch the safe split-test",
+        title: "Replay the safe split-test",
         detail:
-          "Excluded four unverified and three suppressed contacts, then launched two controlled 20-contact variants.",
+          "The replay excludes four unverified and three suppressed contacts, then models two controlled 20-contact variants.",
         evidence: "40 sent · 100% verified · suppression list honored",
         metrics: {
           latestPositiveRate: 35,
@@ -273,9 +328,9 @@ export function createDemoRun(strategyResult?: StrategyEngineResult): LoopRun {
       {
         id: "evt-observe-winner",
         phase: "observe",
-        provider: "Nexla",
+        provider: "SignalLoop",
         kind: "success",
-        title: "Outcome-led framing wins",
+        title: "Replay: outcome-led framing wins",
         detail:
           "Audit evidence produced 7 positive replies and 4 meetings versus 3 positives and 1 meeting for the fear-led variant.",
         evidence: "35% vs. 15% positive reply rate",

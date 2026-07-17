@@ -20,39 +20,54 @@ directional winner.
 - Daily volume stays below 50, only verified contacts are eligible, and the
   sender reputation score never decreases.
 
-## Sponsor-ready capability chain
+## Integration status
 
-| Boundary | Sponsor | Job in the loop |
+| Boundary | Provider | What is real today |
 | --- | --- | --- |
-| `SignalSource` | Nexla | Normalize CRM, reply, and experiment outcomes into observations. |
-| `Strategist` | AWS Bedrock | Diagnose evidence and return the next constrained hypothesis. |
-| `CapabilityGateway` | Zero | Discover and invoke enrichment, verification, and outreach capabilities. |
-| `ProtectedAction` | Pomerium | Enforce identity-aware policy before any side effect. |
+| `Strategist` | OpenAI | Responses API adapter is wired and validated; the current project returns `billing_not_active`, so the app labels and uses its fallback. |
+| `SignalSource` | Nexla | Campaign CSV and SQL schema are prepared; the runtime connector is not wired yet. |
+| `CapabilityGateway` | Zero | Live public search and capability inspection on every normal run; the app does not execute or pay for capabilities. |
+| `ProtectedAction` | Pomerium | A local tunnel was created; the policy decision in the replay is still modeled. |
+| `Strategist` (optional) | AWS Bedrock | Converse adapter is implemented but inactive because AWS key provisioning failed. |
 
-The Bedrock strategist is live-ready: the server sends the completed campaign
-evidence to Amazon Nova through Bedrock's Converse API, validates the returned
-hypothesis, and injects it into the replay. When no Bedrock API key is present,
-the same endpoint returns a labeled deterministic fallback, so the demo never
-pretends a sponsor call happened and never fails on stage. The remaining
-sponsor boundaries are still deterministic integration seams.
+When explicitly enabled, the strategist sends the completed campaign evidence
+to OpenAI's Responses API using `gpt-5.6-luna`, asks for a constrained
+hypothesis through Structured Outputs, validates the result again in the
+application, and injects it into the replay. When paid inference is disabled,
+the key has no active billing, or the response fails validation, the endpoint
+returns a clearly labeled deterministic fallback so the stage demo still works
+without pretending a live call happened.
 
-## Enable AWS Bedrock
+## Enable OpenAI
 
-For a hackathon demo, generate an Amazon Bedrock API key in the AWS console,
-then create a local environment file:
+Create a local environment file:
 
 ```bash
 cp .env.example .env.local
 ```
 
-Put the key after `AWS_BEARER_TOKEN_BEDROCK=` in `.env.local`, restart the app,
-and run the learning loop. The status at the top of the dashboard will switch
-from **DEMO FALLBACK** to **LIVE** only after Bedrock returns a valid strategy.
+Put the key after `OPENAI_API_KEY=` and set `OPENAI_LIVE_ENABLED=true` in a
+trusted local environment. Restart the app and run the learning loop. The
+status at the top of the dashboard switches from **DEMO FALLBACK** to **LIVE**
+only after OpenAI returns a valid, evidence-grounded strategy. The hosted demo
+keeps paid secrets and paid inference disabled, and the API route enforces that
+live inference can only run on a loopback host.
 
-The default model is `us.amazon.nova-2-lite-v1:0` in `us-east-1`. Both can be
-overridden in `.env.local`. Credentials stay server-side and `.env.local` is
-ignored by Git. The Bedrock step only proposes strategy; it cannot send email
-or call an action tool.
+The default model is `gpt-5.6-luna` and can be overridden with `OPENAI_MODEL`.
+Credentials stay server-side and `.env.local` is ignored by Git. The model step
+only proposes strategy; it cannot send email or call an action tool.
+
+## Zero capability gateway
+
+SignalLoop calls Zero's public search and capability APIs from the server. A
+normal learning-loop run searches the current index and inspects a healthy
+email-verification capability without executing it, sharing contact data, or
+spending funds. No wallet or Zero session is required.
+
+A capped `$0.005 USDC` paid verification was successfully exercised during
+development, but it is intentionally not exposed through the application
+route. Before that becomes a product feature, it needs operator authentication,
+a provider allowlist and preview, idempotency, and a persistent spend budget.
 
 ## Run locally
 
@@ -81,7 +96,9 @@ deny-before-replan ordering, guardrail invariants, and removal of starter UI.
 
 - `app/signal-loop-dashboard.tsx` — interactive experiment replay
 - `app/api/demo-loop/route.ts` — live-or-fallback loop endpoint
-- `lib/signalloop/bedrock.ts` — server-only Bedrock Converse adapter and validation
+- `lib/signalloop/openai.ts` — active OpenAI Responses adapter and validation
+- `lib/signalloop/bedrock.ts` — optional inactive Bedrock Converse adapter
+- `lib/signalloop/zero.ts` — public, read-only Zero capability discovery
 - `lib/signalloop/loop.ts` — event contract, evidence, metrics, and guardrails
-- `lib/signalloop/adapters.ts` — sponsor integration boundaries
+- `lib/signalloop/adapters.ts` — provider integration boundaries and readiness
 - `tests/rendered-html.test.mjs` — product and safety assertions

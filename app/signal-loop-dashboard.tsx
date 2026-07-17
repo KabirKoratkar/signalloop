@@ -116,23 +116,34 @@ export function SignalLoopDashboard() {
   const blocked = activeEvent?.kind === "blocked";
   const phase = activeEvent?.phase.toUpperCase() ?? "READY";
   const strategyEngine = run?.strategyEngine;
+  const capabilityGateway = run?.capabilityGateway;
   const strategyEngineLabel =
     runState === "loading"
-      ? "AWS Bedrock · checking"
+      ? "OpenAI · checking"
       : strategyEngine?.mode === "live"
-        ? "AWS Bedrock · live"
+        ? `${strategyEngine.provider} · live`
         : strategyEngine
-          ? "AWS Bedrock · demo fallback"
+          ? `${strategyEngine.provider} · demo fallback`
           : "TraceLayer · 3-day replay";
-  const displayedSponsorRoles = sponsorRoles.map((sponsor) =>
-    sponsor.name === "AWS Bedrock" && strategyEngine
-      ? {
-          ...sponsor,
-          state:
-            strategyEngine.mode === "live" ? "live inference" : "demo fallback",
-        }
-      : sponsor,
-  );
+  const displayedSponsorRoles = sponsorRoles.map((sponsor) => {
+    if (sponsor.name === strategyEngine?.provider) {
+      return {
+        ...sponsor,
+        state:
+          strategyEngine.mode === "live" ? "live inference" : "demo fallback",
+      };
+    }
+    if (sponsor.name === "Zero" && capabilityGateway) {
+      return {
+        ...sponsor,
+        state:
+          capabilityGateway.mode === "live-discovery"
+            ? "live discovery"
+            : "demo fallback",
+      };
+    }
+    return sponsor;
+  });
 
   async function runLoop() {
     abortRef.current?.abort();
@@ -145,7 +156,10 @@ export function SignalLoopDashboard() {
       const response = await fetch("/api/demo-loop", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ scenario: "pivot-to-fintech" }),
+        body: JSON.stringify({
+          scenario: "pivot-to-fintech",
+          zeroMode: "discover",
+        }),
         signal: controller.signal,
       });
 
@@ -371,7 +385,7 @@ export function SignalLoopDashboard() {
         <article className="panel guardrail-panel">
           <div className="panel-heading">
             <div><span className="eyebrow">Hard boundary</span><h2>Autonomy without the spam cannon.</h2></div>
-            <span className="shield" aria-label="Policy enforced">P</span>
+            <span className="shield" aria-label="Modeled policy boundary">P</span>
           </div>
           <ul>
             <li><span>Maximum daily send</span><strong>50</strong></li>
@@ -392,7 +406,7 @@ export function SignalLoopDashboard() {
       </section>
 
       <footer className="sponsor-rail">
-        <div><span className="eyebrow">Sponsor-ready capability chain</span><p>Every sponsor owns a visible, swappable step in the loop.</p></div>
+        <div><span className="eyebrow">Integration readiness</span><p>Each boundary reports what is real in this build.</p></div>
         <ol>
           {displayedSponsorRoles.map((sponsor, index) => (
             <li key={sponsor.name}>
