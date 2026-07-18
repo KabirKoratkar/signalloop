@@ -22,7 +22,7 @@ export interface ProtectedAction {
 
 export const sponsorRoles = [
   { name: "OpenAI", role: "reasoning", state: "billing blocked" },
-  { name: "Nexla", role: "signals", state: "data prepared" },
+  { name: "Nexla", role: "signals", state: "MCP ready" },
   { name: "Zero", role: "capability discovery", state: "live discovery" },
   { name: "Pomerium", role: "policy", state: "tunnel only" },
 ] as const;

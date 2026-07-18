@@ -1,6 +1,7 @@
 import { createDemoRun } from "@/lib/signalloop/loop";
 import { resolveOpenAIStrategy } from "@/lib/signalloop/openai";
 import { resolveZeroAction } from "@/lib/signalloop/zero";
+import { resolveNexlaSignals } from "@/lib/signalloop/nexla";
 
 function isLoopbackRequest(request: Request) {
   const hostname = new URL(request.url).hostname.toLowerCase();
@@ -41,7 +42,7 @@ export async function POST(request: Request) {
   }
 
   const forceDemo = strategyMode === "demo";
-  const [strategyResult, zeroResult] = await Promise.all([
+  const [strategyResult, zeroResult, nexlaResult] = await Promise.all([
     resolveOpenAIStrategy({
       forceDemo,
       allowLive: isLoopbackRequest(request),
@@ -49,9 +50,10 @@ export async function POST(request: Request) {
     resolveZeroAction({
       forceDemo: forceDemo || zeroMode === undefined,
     }),
+    resolveNexlaSignals({ forceDemo }),
   ]);
 
-  return Response.json(createDemoRun(strategyResult, zeroResult), {
+  return Response.json(createDemoRun(strategyResult, zeroResult, nexlaResult), {
     headers: { "cache-control": "no-store" },
   });
 }
