@@ -25,7 +25,7 @@ directional winner.
 | Boundary | Provider | What is real today |
 | --- | --- | --- |
 | `Strategist` | OpenAI | Responses API adapter is wired and validated; the current project returns `billing_not_active`, so the app labels and uses its fallback. |
-| `SignalSource` | Nexla | Campaign CSV and SQL schema are prepared; the runtime connector is not wired yet. |
+| `SignalSource` | Nexla | Live, server-only MCP query is wired to the governed PostgreSQL campaign data, with a validated deterministic fallback. |
 | `CapabilityGateway` | Zero | Live public search and capability inspection on every normal run; the app does not execute or pay for capabilities. |
 | `ProtectedAction` | Pomerium | A local tunnel was created; the policy decision in the replay is still modeled. |
 | `Strategist` (optional) | AWS Bedrock | Converse adapter is implemented but inactive because AWS key provisioning failed. |
@@ -56,6 +56,19 @@ live inference can only run on a loopback host.
 The default model is `gpt-5.6-luna` and can be overridden with `OPENAI_MODEL`.
 Credentials stay server-side and `.env.local` is ignored by Git. The model step
 only proposes strategy; it cannot send email or call an action tool.
+
+## Enable Nexla MCP
+
+Set `NEXLA_LIVE_ENABLED=true`, `NEXLA_MCP_URL`, and `NEXLA_SERVICE_KEY` in
+`.env.local` or in the deployment's server-side secrets. The route invokes only
+the fixed `nexset_read_signalloop_events_schema` tool with an immutable read-only aggregate
+query. Browser input cannot supply SQL, tool names, tables, or limits, and the
+response excludes contact IDs, email addresses, raw MCP envelopes, and secrets.
+
+The dashboard labels Nexla **live MCP** only after exactly six schema-valid
+campaign groups produce the verified totals of 86 sends, 16 positive replies,
+and 8 meetings. Otherwise it keeps the deterministic replay available and
+shows **demo fallback**.
 
 ## Zero capability gateway
 
@@ -97,6 +110,7 @@ deny-before-replan ordering, guardrail invariants, and removal of starter UI.
 - `app/signal-loop-dashboard.tsx` — interactive experiment replay
 - `app/api/demo-loop/route.ts` — live-or-fallback loop endpoint
 - `lib/signalloop/openai.ts` — active OpenAI Responses adapter and validation
+- `lib/signalloop/nexla.ts` — server-only MCP client, fixed query, and validation
 - `lib/signalloop/bedrock.ts` — optional inactive Bedrock Converse adapter
 - `lib/signalloop/zero.ts` — public, read-only Zero capability discovery
 - `lib/signalloop/loop.ts` — event contract, evidence, metrics, and guardrails

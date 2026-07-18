@@ -77,6 +77,144 @@ test("demo API returns the deterministic learning loop", async () => {
   );
 });
 
+test("a validated Nexla MCP result drives the experiment ledger", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalNexlaEnabled = process.env.NEXLA_LIVE_ENABLED;
+  const originalNexlaUrl = process.env.NEXLA_MCP_URL;
+  const originalNexlaKey = process.env.NEXLA_SERVICE_KEY;
+  const originalOpenAIEnabled = process.env.OPENAI_LIVE_ENABLED;
+  const originalZeroEnabled = process.env.ZERO_LIVE_ENABLED;
+  const mcpCalls = [];
+
+  process.env.NEXLA_LIVE_ENABLED = "true";
+  process.env.NEXLA_MCP_URL =
+    "https://api-genai.nexla.io/mcp/service_key/signalloop-test";
+  process.env.NEXLA_SERVICE_KEY = "nexla-test-key";
+  process.env.OPENAI_LIVE_ENABLED = "false";
+  process.env.ZERO_LIVE_ENABLED = "false";
+
+  const rows = [
+    ["TL-D1-COST", "Engineering leaders", "Developer Tools", "Reduce AI infrastructure cost", 22, 0, 0],
+    ["TL-D2-AUDIT", "Security leaders", "Fintech", "Audit-ready agent access", 12, 5, 3],
+    ["TL-D2-AUDIT", "Security leaders", "Healthcare", "Audit-ready agent access", 6, 0, 0],
+    ["TL-D2-AUDIT", "Security leaders", "SaaS", "Audit-ready agent access", 6, 1, 0],
+    ["TL-D3-A", "Fintech security leaders", "Fintech", "Evidence for every agent action", 20, 7, 4],
+    ["TL-D3-B", "Fintech security leaders", "Fintech", "Could your agent pass review?", 20, 3, 1],
+  ].map(([campaign_id, audience, industry, variant, unique_contacts_sent, positive_replies, meetings_booked]) => ({
+    campaign_id,
+    audience,
+    industry,
+    variant,
+    unique_contacts_sent,
+    positive_replies,
+    meetings_booked,
+  }));
+
+  globalThis.fetch = async (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    if (!url.startsWith("https://api-genai.nexla.io/")) {
+      return originalFetch(input, init);
+    }
+    const headers = new Headers(init?.headers);
+    assert.equal(headers.get("authorization"), "Bearer nexla-test-key");
+    if (init?.method === "GET") return new Response(null, { status: 405 });
+
+    const body = JSON.parse(init?.body);
+    if (body.method === "initialize") {
+      return Response.json({
+        jsonrpc: "2.0",
+        id: body.id,
+        result: {
+          protocolVersion: body.params.protocolVersion,
+          capabilities: { tools: {} },
+          serverInfo: { name: "nexla-test", version: "1.0.0" },
+        },
+      });
+    }
+    if (body.method === "notifications/initialized") {
+      return new Response(null, { status: 202 });
+    }
+    if (body.method === "tools/call") {
+      mcpCalls.push(body.params);
+      const columns = Object.keys(rows[0]).map((name) => ({
+        name,
+        values: rows.map((row) => row[name]),
+      }));
+      return Response.json({
+        jsonrpc: "2.0",
+        id: body.id,
+        result: {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                structuredContent: {
+                  status: "OK",
+                  data: {
+                    format: "dataframe_columns",
+                    payload: { columns, rows: rows.length },
+                  },
+                },
+                isError: false,
+              }),
+            },
+          ],
+        },
+      });
+    }
+    throw new Error(`Unexpected MCP request: ${body.method}`);
+  };
+
+  try {
+    const response = await request("/api/demo-loop", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ scenario: "pivot-to-fintech" }),
+    });
+    const run = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(
+      run.signalSource.mode,
+      "live-mcp",
+      JSON.stringify(run.signalSource),
+    );
+    assert.equal(run.signalSource.rowCount, 6);
+    assert.equal(run.events[0].provider, "Nexla");
+    assert.deepEqual(
+      run.experiments.map(({ sent, positive, meetings }) => ({ sent, positive, meetings })),
+      [
+        { sent: 22, positive: 0, meetings: 0 },
+        { sent: 24, positive: 6, meetings: 3 },
+        { sent: 20, positive: 7, meetings: 4 },
+        { sent: 20, positive: 3, meetings: 1 },
+      ],
+    );
+    assert.equal(mcpCalls.length, 1);
+    assert.equal(mcpCalls[0].name, "nexset_read_signalloop_events_schema");
+    assert.equal(mcpCalls[0].arguments.limit, 20);
+    assert.match(mcpCalls[0].arguments.query, /FROM public\.signalloop_events/);
+    assert.doesNotMatch(mcpCalls[0].arguments.query, /;|SELECT\s+\*/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const [key, value] of [
+      ["NEXLA_LIVE_ENABLED", originalNexlaEnabled],
+      ["NEXLA_MCP_URL", originalNexlaUrl],
+      ["NEXLA_SERVICE_KEY", originalNexlaKey],
+      ["OPENAI_LIVE_ENABLED", originalOpenAIEnabled],
+      ["ZERO_LIVE_ENABLED", originalZeroEnabled],
+    ]) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test("a normal run performs live Zero discovery without spending", async () => {
   const originalFetch = globalThis.fetch;
   const originalOpenAIEnabled = process.env.OPENAI_LIVE_ENABLED;

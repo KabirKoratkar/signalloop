@@ -117,6 +117,7 @@ export function SignalLoopDashboard() {
   const phase = activeEvent?.phase.toUpperCase() ?? "READY";
   const strategyEngine = run?.strategyEngine;
   const capabilityGateway = run?.capabilityGateway;
+  const signalSource = run?.signalSource;
   const strategyEngineLabel =
     runState === "loading"
       ? "OpenAI · checking"
@@ -139,6 +140,15 @@ export function SignalLoopDashboard() {
         state:
           capabilityGateway.mode === "live-discovery"
             ? "live discovery"
+            : "demo fallback",
+      };
+    }
+    if (sponsor.name === "Nexla" && signalSource) {
+      return {
+        ...sponsor,
+        state:
+          signalSource.mode === "live-mcp"
+            ? `live MCP · ${signalSource.rowCount} groups`
             : "demo fallback",
       };
     }

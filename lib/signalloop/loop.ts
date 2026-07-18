@@ -94,6 +94,29 @@ export interface ZeroGatewayResult {
   action: ZeroActionSnapshot;
 }
 
+export type NexlaFallbackCode =
+  | "not-requested"
+  | "forced-demo"
+  | "disabled"
+  | "missing-config"
+  | "timeout"
+  | "service-error"
+  | "invalid-response"
+  | "empty-data";
+
+export interface NexlaSignalStatus {
+  provider: "Nexla";
+  mode: "live-mcp" | "deterministic-fallback";
+  latencyMs: number;
+  rowCount: number;
+  fallbackCode?: NexlaFallbackCode;
+}
+
+export interface NexlaSignalResult {
+  status: NexlaSignalStatus;
+  experiments?: ExperimentResult[];
+}
+
 export interface LoopEvent {
   id: string;
   phase: LoopPhase;
@@ -125,6 +148,7 @@ export interface LoopRun {
   product: { name: string; description: string; goal: string };
   strategyEngine: StrategyEngineStatus;
   capabilityGateway: ZeroGatewayStatus;
+  signalSource: NexlaSignalStatus;
   before: { metrics: MetricSnapshot; strategy: StrategySnapshot };
   events: LoopEvent[];
   experiments: ExperimentResult[];
@@ -189,9 +213,20 @@ const defaultZeroResult: ZeroGatewayResult = {
   },
 };
 
+const defaultNexlaResult: NexlaSignalResult = {
+  status: {
+    provider: "Nexla",
+    mode: "deterministic-fallback",
+    latencyMs: 0,
+    rowCount: 0,
+    fallbackCode: "not-requested",
+  },
+};
+
 export function createDemoRun(
   strategyResult?: StrategyEngineResult,
   zeroResult: ZeroGatewayResult = defaultZeroResult,
+  nexlaResult: NexlaSignalResult = defaultNexlaResult,
 ): LoopRun {
   const proposal = strategyResult?.proposal ?? deterministicProposal;
   const strategyEngine = strategyResult?.status ?? defaultStrategyEngine;
@@ -199,6 +234,7 @@ export function createDemoRun(
     strategyEngine.mode === "live" ? strategyEngine.provider : "SignalLoop";
   const zeroProvider: Provider =
     zeroResult.status.mode === "live-discovery" ? "Zero" : "SignalLoop";
+  const nexlaIsLive = nexlaResult.status.mode === "live-mcp";
 
   return {
     runId: "tracelayer-loop-2026-07-17",
@@ -210,18 +246,23 @@ export function createDemoRun(
     },
     strategyEngine,
     capabilityGateway: zeroResult.status,
+    signalSource: nexlaResult.status,
     before: { metrics: baselineMetrics, strategy: initialStrategy },
     events: [
       {
         id: "evt-observe-day-one",
         phase: "observe",
-        provider: "SignalLoop",
+        provider: nexlaIsLive ? "Nexla" : "SignalLoop",
         kind: "info",
-        title: "Replay: Day 1 misses the mark",
-        detail:
-          "The fictional replay models 22 verified engineering leaders receiving the cost-control message, with no positive replies or meetings.",
-        evidence:
-          "“Spend isn’t my issue. Security needs an audit trail before our SOC 2 review.”",
+        title: nexlaIsLive
+          ? "Nexla MCP loads governed campaign evidence"
+          : "Replay: Day 1 misses the mark",
+        detail: nexlaIsLive
+          ? "The live MCP result validated six governed campaign groups covering 86 deduplicated events, 16 positive replies, and 8 meetings."
+          : "The fictional replay models 22 verified engineering leaders receiving the cost-control message, with no positive replies or meetings.",
+        evidence: nexlaIsLive
+          ? `${nexlaResult.status.rowCount} grouped rows · read-only aggregate query · no contact data exposed`
+          : "“Spend isn’t my issue. Security needs an audit trail before our SOC 2 review.”",
         metrics: baselineMetrics,
         strategy: initialStrategy,
       },
@@ -359,7 +400,7 @@ export function createDemoRun(
         },
       },
     ],
-    experiments: [
+    experiments: nexlaResult.experiments ?? [
       {
         id: "day-1",
         day: "DAY 01",
