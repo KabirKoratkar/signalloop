@@ -6,7 +6,7 @@ import type {
 
 const NEXLA_HOSTNAME = "api-genai.nexla.io";
 const TOOL_NAME = "nexset_read_signalloop_events_schema";
-const REQUEST_TIMEOUT_MS = 9_000;
+const REQUEST_TIMEOUT_MS = 35_000;
 const MAX_RESPONSE_TEXT_LENGTH = 200_000;
 const EXPECTED_ROW_COUNT = 6;
 
